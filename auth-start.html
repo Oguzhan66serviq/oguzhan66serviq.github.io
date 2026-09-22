@@ -1,0 +1,10 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Microsoft-Anmeldung</title><link rel="stylesheet" href="styles.css"></head>
+<body><main class="shell"><section class="card"><h1>Microsoft-Anmeldung wird geöffnet …</h1><p>Sie werden sicher zu Microsoft weitergeleitet.</p></section></main><script>
+(function(){
+  const callback=new URLSearchParams(location.search).get('callback');
+  const allowed=`${location.origin}/auth-callback.html`;
+  if(callback!==allowed){document.querySelector('p').textContent='Ungültige Weiterleitungsadresse.';return;}
+  const supabase='https://rkhptbohniykwxhwhjiz.supabase.co';
+  location.replace(`${supabase}/auth/v1/authorize?provider=azure&redirect_to=${encodeURIComponent(callback)}&scopes=${encodeURIComponent('email openid profile')}`);
+})();
+</script></body></html>
