@@ -1,0 +1,54 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="color-scheme" content="light" />
+  <title>Serviq für Outlook</title>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div class="mark">S</div>
+      <div><strong>serviq</strong><span>für Outlook</span></div>
+    </header>
+
+    <section id="signinView" class="card">
+      <p class="eyebrow">Sicher verbinden</p>
+      <h1>Angebot direkt aus dieser E-Mail erstellen</h1>
+      <p>Melde dich mit deinem Serviq-Konto an. Das Outlook-Postfach darf eine andere E-Mail-Adresse haben.</p>
+      <form id="signInForm">
+        <label for="loginEmail">E-Mail-Adresse</label>
+        <input id="loginEmail" name="email" type="email" autocomplete="username" required="required" placeholder="name@unternehmen.de" />
+        <label for="loginPassword">Passwort</label>
+        <input id="loginPassword" name="password" type="password" autocomplete="current-password" required="required" />
+        <button id="signInBtn" class="primary" type="submit">Mit Serviq anmelden</button>
+      </form>
+      <button id="forgotPasswordBtn" class="link auth-link" type="button">Passwort vergessen?</button>
+      <p id="signInMessage" class="message" role="status" aria-live="polite"></p>
+      <p class="fine">Ohne Anmeldung werden weder E-Mail-Inhalte gelesen noch gespeichert.</p>
+    </section>
+
+    <section id="importView" class="card hidden">
+      <div class="statusline"><span id="accountName"></span><button id="signOutBtn" class="link">Abmelden</button></div>
+      <p class="eyebrow">Geöffnete Nachricht</p>
+      <h1 id="mailSubject">E-Mail wird gelesen …</h1>
+      <dl><div><dt>Von</dt><dd id="mailFrom">–</dd></div><div><dt>Arbeitsbereich</dt><dd id="orgName">–</dd></div></dl>
+      <label for="note">Interner Hinweis (optional)</label>
+      <textarea id="note" rows="3" placeholder="z. B. Rückruf bis Freitag"></textarea>
+      <button id="importBtn" class="primary">Angebot erstellen</button>
+      <p class="fine">Mit dem Klick wird der Nachrichtentext zur KI-Auswertung verarbeitet. Vor dem Versand öffnet Outlook einen bearbeitbaren Antwortentwurf.</p>
+      <button id="openServiqBtn" class="secondary">Serviq öffnen</button>
+      <p id="message" class="message" role="status" aria-live="polite"></p>
+    </section>
+
+    <section id="unsupportedView" class="card hidden">
+      <h1>Bitte in Outlook öffnen</h1>
+      <p>Diese Oberfläche gehört zum Serviq-Outlook-Add-in und liest nur die aktuell geöffnete Nachricht.</p>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
