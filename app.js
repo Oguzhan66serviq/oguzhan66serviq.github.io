@@ -5,6 +5,8 @@ const SERVIQ_URL = 'https://serviq-catering-ai-ogu.oguzhan-yoeruerer.chatgpt.sit
 const CALLBACK_URL = `${location.origin}/auth-callback-v2.html`;
 const TOKEN_KEY = 'serviq_access_token';
 const REFRESH_KEY = 'serviq_refresh_token';
+const OAUTH_BRIDGE_KEY = 'serviq_oauth_bridge_v2';
+const OAUTH_CHANNEL = 'serviq_oauth_channel_v2';
 const state = { token: localStorage.getItem(TOKEN_KEY) || '', refreshToken: localStorage.getItem(REFRESH_KEY) || '', user: null, membership: null, mail: null, company: {}, rules: {}, catalog: [] };
 const $ = id => document.getElementById(id);
 const euro = value => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(value);
@@ -101,20 +103,42 @@ async function beginSignIn(event){
 function beginMicrosoftSignIn(){
   const button=$('microsoftSignInBtn');const status=$('signInMessage');
   button.disabled=true;status.textContent='Microsoft-Anmeldung wird geöffnet …';status.className='message';
+  localStorage.removeItem(OAUTH_BRIDGE_KEY);
   const startUrl=`${location.origin}/auth-start.html?callback=${encodeURIComponent(CALLBACK_URL)}`;
   Office.context.ui.displayDialogAsync(startUrl,{height:70,width:40,displayInIframe:false},result=>{
     if(result.status!==Office.AsyncResultStatus.Succeeded){
       button.disabled=false;status.textContent=`Anmeldefenster konnte nicht geöffnet werden: ${result.error.message}`;status.className='message error';return;
     }
     const dialog=result.value;
-    dialog.addEventHandler(Office.EventType.DialogMessageReceived,async event=>{
+    let finished=false;
+    let bridgeChannel=null;
+    let bridgePoll=null;
+    const cleanup=()=>{
+      if(bridgePoll)clearInterval(bridgePoll);
+      if(bridgeChannel)bridgeChannel.close();
+      localStorage.removeItem(OAUTH_BRIDGE_KEY);
+    };
+    const acceptPayload=async raw=>{
+      if(finished)return;
       let payload={};
-      try{payload=JSON.parse(event.message);}catch(_){payload={error:'Ungültige Antwort der Anmeldung.'};}
-      dialog.close();button.disabled=false;
+      try{payload=typeof raw==='string'?JSON.parse(raw):raw;}catch(_){payload={error:'Ungültige Antwort der Anmeldung.'};}
+      if(!payload?.access_token&&!payload?.error)return;
+      finished=true;cleanup();dialog.close();button.disabled=false;
       if(payload.error){status.textContent=payload.error;status.className='message error';return;}
       storeSession(payload);await initialize();
+    };
+    dialog.addEventHandler(Office.EventType.DialogMessageReceived,event=>{
+      acceptPayload(event.message);
     });
-    dialog.addEventHandler(Office.EventType.DialogEventReceived,()=>{button.disabled=false;});
+    try{
+      bridgeChannel=new BroadcastChannel(OAUTH_CHANNEL);
+      bridgeChannel.onmessage=event=>acceptPayload(event.data);
+    }catch(_){/* Polling bleibt als kompatibler Fallback aktiv. */}
+    bridgePoll=setInterval(()=>{
+      const bridged=localStorage.getItem(OAUTH_BRIDGE_KEY);
+      if(bridged)acceptPayload(bridged);
+    },300);
+    dialog.addEventHandler(Office.EventType.DialogEventReceived,()=>{cleanup();button.disabled=false;});
   });
 }
 
