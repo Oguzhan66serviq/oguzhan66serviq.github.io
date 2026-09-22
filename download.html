@@ -1,0 +1,43 @@
+<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Serviq Outlook-Add-in herunterladen</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header><div class="mark">S</div><div><strong>serviq</strong><span>für Outlook</span></div></header>
+    <section class="card">
+      <p class="eyebrow">Outlook-Installation</p>
+      <h1>Manifest als Datei speichern</h1>
+      <p>Diese XML-Datei wird anschließend in Outlook als benutzerdefiniertes Add-in hochgeladen.</p>
+      <button id="downloadManifest" class="primary">manifest.xml herunterladen</button>
+      <p id="downloadStatus" class="message" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <script>
+    document.getElementById('downloadManifest').addEventListener('click', async () => {
+      const status = document.getElementById('downloadStatus');
+      try {
+        const response = await fetch('./manifest.xml', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Datei konnte nicht geladen werden.');
+        const blob = new Blob([await response.text()], { type: 'application/xml' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = 'serviq-outlook-manifest.xml';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        status.textContent = 'Die Datei wurde im Download-Ordner gespeichert.';
+        status.className = 'message ok';
+      } catch (error) {
+        status.textContent = error.message;
+        status.className = 'message error';
+      }
+    });
+  </script>
+</body>
+</html>
