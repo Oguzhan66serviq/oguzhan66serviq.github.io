@@ -10,7 +10,11 @@
   function sendToOutlook(){
     try {
       if (!window.Office || !Office.context || !Office.context.ui) return false;
-      Office.context.ui.messageParent(message, { targetOrigin: 'https://oguzhan66serviq.github.io' });
+      try {
+        Office.context.ui.messageParent(message, { targetOrigin: 'https://oguzhan66serviq.github.io' });
+      } catch (_) {
+        Office.context.ui.messageParent(message);
+      }
       status.textContent = 'Anmeldung erfolgreich. Das Fenster wird geschlossen …';
       return true;
     } catch (_) { return false; }
@@ -33,8 +37,9 @@
   let attempts = 0;
   const retry = setInterval(function(){
     attempts += 1;
-    if (sendToOutlook() || attempts >= 20) clearInterval(retry);
-    if (attempts >= 20) status.textContent = 'Die Anmeldung war erfolgreich. Bitte schließen Sie dieses Fenster und öffnen Sie das Add-in erneut.';
+    sendToOutlook();
+    if (attempts >= 40) clearInterval(retry);
+    if (attempts >= 40) status.textContent = 'Die Anmeldung war erfolgreich. Bitte schließen Sie dieses Fenster und öffnen Sie das Add-in erneut.';
   }, 250);
 })();
 </script></body></html>
