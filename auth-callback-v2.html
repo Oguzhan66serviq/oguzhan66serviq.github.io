@@ -1,0 +1,33 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Anmeldung wird abgeschlossen</title><link rel="stylesheet" href="styles.css"><script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script></head>
+<body><main class="shell"><section class="card"><h1>Anmeldung wird abgeschlossen …</h1><p id="status">Sitzung wird sicher an Outlook übergeben …</p></section></main><script>
+(function(){
+  const params = new URLSearchParams(location.hash.slice(1));
+  const payload = {access_token: params.get('access_token'), refresh_token: params.get('refresh_token'), expires_at: params.get('expires_at'), error: params.get('error_description') || params.get('error')};
+  const message = JSON.stringify(payload);
+  const status = document.getElementById('status');
+  history.replaceState(null, '', location.pathname);
+
+  function sendToOutlook(){
+    try {
+      if (!window.Office || !Office.context || !Office.context.ui) return false;
+      Office.context.ui.messageParent(message, { targetOrigin: 'https://oguzhan66serviq.github.io' });
+      status.textContent = 'Anmeldung erfolgreich. Das Fenster wird geschlossen …';
+      return true;
+    } catch (_) { return false; }
+  }
+
+  if (payload.error || !payload.access_token) {
+    status.textContent = payload.error || 'Microsoft hat keine gültige Anmeldung zurückgegeben.';
+    return;
+  }
+
+  Office.onReady(sendToOutlook);
+  Office.initialize = sendToOutlook;
+  let attempts = 0;
+  const retry = setInterval(function(){
+    attempts += 1;
+    if (sendToOutlook() || attempts >= 20) clearInterval(retry);
+    if (attempts >= 20) status.textContent = 'Die Anmeldung war erfolgreich. Bitte schließen Sie dieses Fenster und öffnen Sie das Add-in erneut.';
+  }, 250);
+})();
+</script></body></html>
