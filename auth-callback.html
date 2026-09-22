@@ -3,9 +3,31 @@
 (function(){
   const params = new URLSearchParams(location.hash.slice(1));
   const payload = {access_token: params.get('access_token'), refresh_token: params.get('refresh_token'), expires_at: params.get('expires_at'), error: params.get('error_description') || params.get('error')};
-  history.replaceState(null, '', location.pathname);
   const message = JSON.stringify(payload);
-  try { Office.onReady(() => Office.context.ui.messageParent(message)); }
-  catch (_) { document.getElementById('status').textContent = payload.error || 'Zurück zu Outlook wechseln.'; }
+  const status = document.getElementById('status');
+  history.replaceState(null, '', location.pathname);
+
+  function sendToOutlook(){
+    try {
+      if (!window.Office || !Office.context || !Office.context.ui) return false;
+      Office.context.ui.messageParent(message, { targetOrigin: 'https://oguzhan66serviq.github.io' });
+      status.textContent = 'Anmeldung erfolgreich. Das Fenster wird geschlossen …';
+      return true;
+    } catch (_) { return false; }
+  }
+
+  if (payload.error || !payload.access_token) {
+    status.textContent = payload.error || 'Microsoft hat keine gültige Anmeldung zurückgegeben.';
+    return;
+  }
+
+  Office.onReady(sendToOutlook);
+  Office.initialize = sendToOutlook;
+  let attempts = 0;
+  const retry = setInterval(function(){
+    attempts += 1;
+    if (sendToOutlook() || attempts >= 20) clearInterval(retry);
+    if (attempts >= 20) status.textContent = 'Die Anmeldung war erfolgreich. Bitte schließen Sie dieses Fenster und öffnen Sie das Add-in erneut.';
+  }, 250);
 })();
 </script></body></html>
