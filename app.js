@@ -3,6 +3,7 @@ const SUPABASE_KEY = 'sb_publishable_I3Pz0TnaVqRt6GdszYq_Jw_BETkoJAk';
 const AI_URL = `${SUPABASE_URL}/functions/v1/serviq-ai`;
 const SERVIQ_URL = 'https://serviq-catering-ai-ogu.oguzhan-yoeruerer.chatgpt.site';
 const CALLBACK_URL = `${location.origin}/auth-callback-v2.html`;
+const HANDOFF_URL = `${SUPABASE_URL}/functions/v1/outlook-auth-handoff`;
 const TOKEN_KEY = 'serviq_access_token';
 const REFRESH_KEY = 'serviq_refresh_token';
 const OAUTH_BRIDGE_KEY = 'serviq_oauth_bridge_v2';
@@ -11,6 +12,13 @@ const state = { token: localStorage.getItem(TOKEN_KEY) || '', refreshToken: loca
 const $ = id => document.getElementById(id);
 const euro = value => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(value);
 const html = value => String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const fromBase64Url=value=>Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(value.length/4)*4,'=')),c=>c.charCodeAt(0));
+const randomToken=(size=32)=>{const bytes=crypto.getRandomValues(new Uint8Array(size));return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
+async function decryptHandoff(ciphertext,iv,key){
+  const cryptoKey=await crypto.subtle.importKey('raw',fromBase64Url(key),'AES-GCM',false,['decrypt']);
+  const clear=await crypto.subtle.decrypt({name:'AES-GCM',iv:fromBase64Url(iv)},cryptoKey,fromBase64Url(ciphertext));
+  return JSON.parse(new TextDecoder().decode(clear));
+}
 
 function show(id){ ['signinView','importView','unsupportedView'].forEach(x => $(x).classList.toggle('hidden', x !== id)); }
 function message(text,type=''){ $('message').textContent=text; $('message').className=`message ${type}`; }
@@ -104,7 +112,9 @@ function beginMicrosoftSignIn(){
   const button=$('microsoftSignInBtn');const status=$('signInMessage');
   button.disabled=true;status.textContent='Microsoft-Anmeldung wird geöffnet …';status.className='message';
   localStorage.removeItem(OAUTH_BRIDGE_KEY);
-  const startUrl=`${location.origin}/auth-start.html?callback=${encodeURIComponent(CALLBACK_URL)}`;
+  const channel=randomToken();const handoffKey=randomToken();
+  const callback=`${CALLBACK_URL}?channel=${encodeURIComponent(channel)}&key=${encodeURIComponent(handoffKey)}`;
+  const startUrl=`${location.origin}/auth-start.html?callback=${encodeURIComponent(callback)}`;
   Office.context.ui.displayDialogAsync(startUrl,{height:70,width:40,displayInIframe:false},result=>{
     if(result.status!==Office.AsyncResultStatus.Succeeded){
       button.disabled=false;status.textContent=`Anmeldefenster konnte nicht geöffnet werden: ${result.error.message}`;status.className='message error';return;
@@ -113,9 +123,13 @@ function beginMicrosoftSignIn(){
     let finished=false;
     let bridgeChannel=null;
     let bridgePoll=null;
+    let handoffPoll=null;
+    let handoffTimeout=null;
     const cleanup=()=>{
       if(bridgePoll)clearInterval(bridgePoll);
       if(bridgeChannel)bridgeChannel.close();
+      if(handoffPoll)clearInterval(handoffPoll);
+      if(handoffTimeout)clearTimeout(handoffTimeout);
       localStorage.removeItem(OAUTH_BRIDGE_KEY);
     };
     const acceptPayload=async raw=>{
@@ -138,7 +152,20 @@ function beginMicrosoftSignIn(){
       const bridged=localStorage.getItem(OAUTH_BRIDGE_KEY);
       if(bridged)acceptPayload(bridged);
     },300);
-    dialog.addEventHandler(Office.EventType.DialogEventReceived,()=>{cleanup();button.disabled=false;});
+    const pollHandoff=async()=>{
+      try{
+        const response=await fetch(HANDOFF_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,'Content-Type':'application/json'},body:JSON.stringify({action:'take',channel})});
+        if(response.status===202)return;
+        const result=await response.json().catch(()=>({}));
+        if(!response.ok)throw new Error(result.error||'Anmeldesitzung konnte nicht übernommen werden.');
+        if(result.ciphertext&&result.iv)await acceptPayload(await decryptHandoff(result.ciphertext,result.iv,handoffKey));
+      }catch(error){
+        if(!finished){status.textContent=friendlyError(error);status.className='message error';}
+      }
+    };
+    handoffPoll=setInterval(pollHandoff,1000);pollHandoff();
+    handoffTimeout=setTimeout(()=>{if(!finished){cleanup();button.disabled=false;status.textContent='Die Anmeldung ist abgelaufen. Bitte erneut versuchen.';status.className='message error';}},5*60*1000);
+    dialog.addEventHandler(Office.EventType.DialogEventReceived,()=>{if(!finished)status.textContent='Microsoft-Anmeldung wird übernommen …';});
   });
 }
 
