@@ -2,10 +2,25 @@
 <body><main class="shell"><section class="card"><h1>Anmeldung wird abgeschlossen …</h1><p id="status">Sitzung wird sicher an Outlook übergeben …</p></section></main><script>
 (function(){
   const params = new URLSearchParams(location.hash.slice(1));
+  const query = new URLSearchParams(location.search);
+  const channel = query.get('channel');
+  const handoffKey = query.get('key');
   const payload = {access_token: params.get('access_token'), refresh_token: params.get('refresh_token'), expires_at: params.get('expires_at'), error: params.get('error_description') || params.get('error')};
   const message = JSON.stringify(payload);
   const status = document.getElementById('status');
   history.replaceState(null, '', location.pathname);
+
+  const fromBase64Url=value=>Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(value.length/4)*4,'=')),c=>c.charCodeAt(0));
+  const toBase64Url=bytes=>btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  async function storeHandoff(){
+    if(!/^[A-Za-z0-9_-]{40,64}$/.test(channel||'')||!/^[A-Za-z0-9_-]{40,64}$/.test(handoffKey||''))throw new Error('Ungültiger Anmeldecode.');
+    const key=await crypto.subtle.importKey('raw',fromBase64Url(handoffKey),'AES-GCM',false,['encrypt']);
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const encrypted=await crypto.subtle.encrypt({name:'AES-GCM',iv},key,new TextEncoder().encode(message));
+    const response=await fetch('https://rkhptbohniykwxhwhjiz.supabase.co/functions/v1/outlook-auth-handoff',{method:'POST',headers:{apikey:'sb_publishable_I3Pz0TnaVqRt6GdszYq_Jw_BETkoJAk','Content-Type':'application/json'},body:JSON.stringify({action:'put',channel,ciphertext:toBase64Url(new Uint8Array(encrypted)),iv:toBase64Url(iv)})});
+    if(!response.ok)throw new Error('Die Sitzung konnte nicht sicher an Outlook übergeben werden.');
+    status.textContent='Anmeldung erfolgreich. Sie können dieses Fenster schließen.';
+  }
 
   function sendToOutlook(){
     try {
@@ -31,6 +46,8 @@
     channel.postMessage(message);
     setTimeout(function(){ channel.close(); }, 1000);
   } catch (_) { /* Office Dialog API bleibt als primärer Weg aktiv. */ }
+
+  storeHandoff().catch(error=>{status.textContent=error.message;});
 
   Office.onReady(sendToOutlook);
   Office.initialize = sendToOutlook;
