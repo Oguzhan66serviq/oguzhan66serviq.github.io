@@ -2,6 +2,7 @@ const SUPABASE_URL = 'https://rkhptbohniykwxhwhjiz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_I3Pz0TnaVqRt6GdszYq_Jw_BETkoJAk';
 const AI_URL = `${SUPABASE_URL}/functions/v1/serviq-ai`;
 const SERVIQ_URL = 'https://serviq-catering-ai-ogu.oguzhan-yoeruerer.chatgpt.site';
+const CALLBACK_URL = `${location.origin}/auth-callback.html`;
 const TOKEN_KEY = 'serviq_access_token';
 const REFRESH_KEY = 'serviq_refresh_token';
 const state = { token: localStorage.getItem(TOKEN_KEY) || '', refreshToken: localStorage.getItem(REFRESH_KEY) || '', user: null, membership: null, mail: null, company: {}, rules: {}, catalog: [] };
@@ -97,6 +98,26 @@ async function beginSignIn(event){
   finally{button.disabled=false;button.textContent='Mit Serviq anmelden';}
 }
 
+function beginMicrosoftSignIn(){
+  const button=$('microsoftSignInBtn');const status=$('signInMessage');
+  button.disabled=true;status.textContent='Microsoft-Anmeldung wird geöffnet …';status.className='message';
+  const startUrl=`${location.origin}/auth-start.html?callback=${encodeURIComponent(CALLBACK_URL)}`;
+  Office.context.ui.displayDialogAsync(startUrl,{height:70,width:40,displayInIframe:false},result=>{
+    if(result.status!==Office.AsyncResultStatus.Succeeded){
+      button.disabled=false;status.textContent=`Anmeldefenster konnte nicht geöffnet werden: ${result.error.message}`;status.className='message error';return;
+    }
+    const dialog=result.value;
+    dialog.addEventHandler(Office.EventType.DialogMessageReceived,async event=>{
+      let payload={};
+      try{payload=JSON.parse(event.message);}catch(_){payload={error:'Ungültige Antwort der Anmeldung.'};}
+      dialog.close();button.disabled=false;
+      if(payload.error){status.textContent=payload.error;status.className='message error';return;}
+      storeSession(payload);await initialize();
+    });
+    dialog.addEventHandler(Office.EventType.DialogEventReceived,()=>{button.disabled=false;});
+  });
+}
+
 function calculateLines(proposal,guestCount){
   const suggestions=new Map((proposal.items||[]).map(item=>[item.id,item]));
   return state.catalog.map(item=>{
@@ -189,7 +210,8 @@ async function createOfferReply(){
 }
 
 $('signInForm').addEventListener('submit',beginSignIn);
-$('forgotPasswordBtn').addEventListener('click',()=>Office.context.ui.openBrowserWindow(SERVIQ_URL));
+$('microsoftSignInBtn').addEventListener('click',beginMicrosoftSignIn);
+$('forgotPasswordBtn').addEventListener('click',()=>Office.context.ui.openBrowserWindow(`${SERVIQ_URL}/?auth=recover`));
 $('signOutBtn').addEventListener('click',()=>{clearSession();show('signinView');});
 $('importBtn').addEventListener('click',createOfferReply);
 $('openServiqBtn').addEventListener('click',()=>Office.context.ui.openBrowserWindow(SERVIQ_URL));
