@@ -1,0 +1,11 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Anmeldung wird abgeschlossen</title><link rel="stylesheet" href="styles.css"><script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script></head>
+<body><main class="shell"><section class="card"><h1>Anmeldung wird abgeschlossen …</h1><p id="status">Dieses Fenster schließt sich gleich.</p></section></main><script>
+(function(){
+  const params = new URLSearchParams(location.hash.slice(1));
+  const payload = {access_token: params.get('access_token'), refresh_token: params.get('refresh_token'), expires_at: params.get('expires_at'), error: params.get('error_description') || params.get('error')};
+  history.replaceState(null, '', location.pathname);
+  const message = JSON.stringify(payload);
+  try { Office.onReady(() => Office.context.ui.messageParent(message)); }
+  catch (_) { document.getElementById('status').textContent = payload.error || 'Zurück zu Outlook wechseln.'; }
+})();
+</script></body></html>
