@@ -21,6 +21,13 @@
     return;
   }
 
+  try {
+    localStorage.setItem('serviq_oauth_bridge_v2', message);
+    const channel = new BroadcastChannel('serviq_oauth_channel_v2');
+    channel.postMessage(message);
+    setTimeout(function(){ channel.close(); }, 1000);
+  } catch (_) { /* Office Dialog API bleibt als primärer Weg aktiv. */ }
+
   Office.onReady(sendToOutlook);
   Office.initialize = sendToOutlook;
   let attempts = 0;
