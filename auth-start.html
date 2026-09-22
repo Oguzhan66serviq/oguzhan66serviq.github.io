@@ -1,10 +1,15 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Microsoft-Anmeldung</title><link rel="stylesheet" href="styles.css"></head>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Microsoft-Anmeldung</title><link rel="stylesheet" href="styles.css"><script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script></head>
 <body><main class="shell"><section class="card"><h1>Microsoft-Anmeldung wird geöffnet …</h1><p>Sie werden sicher zu Microsoft weitergeleitet.</p></section></main><script>
 (function(){
   const callback=new URLSearchParams(location.search).get('callback');
   const allowed=`${location.origin}/auth-callback-v2.html`;
   if(callback!==allowed){document.querySelector('p').textContent='Ungültige Weiterleitungsadresse.';return;}
   const supabase='https://rkhptbohniykwxhwhjiz.supabase.co';
-  location.replace(`${supabase}/auth/v1/authorize?provider=azure&redirect_to=${encodeURIComponent(callback)}&scopes=${encodeURIComponent('email openid profile')}`);
+  const authorize=()=>location.replace(`${supabase}/auth/v1/authorize?provider=azure&redirect_to=${encodeURIComponent(callback)}&scopes=${encodeURIComponent('email openid profile')}`);
+  let opened=false;
+  const start=()=>{if(opened)return;opened=true;authorize();};
+  Office.onReady(start);
+  Office.initialize=start;
+  setTimeout(start,4000);
 })();
 </script></body></html>
