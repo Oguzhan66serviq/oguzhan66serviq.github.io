@@ -2,7 +2,7 @@
 <body><main class="shell"><section class="card"><h1>Microsoft-Anmeldung wird geöffnet …</h1><p>Sie werden sicher zu Microsoft weitergeleitet.</p></section></main><script>
 (function(){
   const callback=new URLSearchParams(location.search).get('callback');
-  const allowed=`${location.origin}/auth-callback.html`;
+  const allowed=`${location.origin}/auth-callback-v2.html`;
   if(callback!==allowed){document.querySelector('p').textContent='Ungültige Weiterleitungsadresse.';return;}
   const supabase='https://rkhptbohniykwxhwhjiz.supabase.co';
   location.replace(`${supabase}/auth/v1/authorize?provider=azure&redirect_to=${encodeURIComponent(callback)}&scopes=${encodeURIComponent('email openid profile')}`);
