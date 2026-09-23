@@ -35,14 +35,14 @@
 
     <section id="importView" class="card hidden">
       <div class="statusline"><span id="accountName"></span><button id="signOutBtn" class="link">Abmelden</button></div>
-      <p class="eyebrow">Geöffnete Nachricht</p>
+      <p class="eyebrow">Geöffnete Anfrage</p>
       <h1 id="mailSubject">E-Mail wird gelesen …</h1>
-      <dl><div><dt>Von</dt><dd id="mailFrom">–</dd></div><div><dt>Arbeitsbereich</dt><dd id="orgName">–</dd></div></dl>
-      <label for="note">Interner Hinweis (optional)</label>
-      <textarea id="note" rows="3" placeholder="z. B. Rückruf bis Freitag"></textarea>
-      <button id="importBtn" class="primary">Angebot erstellen</button>
-      <p class="fine">Mit dem Klick wird der Nachrichtentext zur KI-Auswertung verarbeitet. Vor dem Versand öffnet Outlook einen bearbeitbaren Antwortentwurf.</p>
-      <button id="openServiqBtn" class="secondary">Serviq öffnen</button>
+      <p id="mailFrom" class="fine">–</p>
+      <span id="orgName" class="hidden">–</span>
+      <textarea id="note" class="hidden" rows="1"></textarea>
+      <button id="importBtn" class="primary">Serviq – Angebot erstellen</button>
+      <p class="fine">Serviq erstellt einen bearbeitbaren Antwortentwurf mit Angebots-PDF. Vor dem Versand bitte kurz prüfen.</p>
+      <button id="openServiqBtn" class="link">Einstellungen öffnen</button>
       <p id="message" class="message" role="status" aria-live="polite"></p>
     </section>
 
@@ -51,6 +51,6 @@
       <p>Diese Oberfläche gehört zum Serviq-Outlook-Add-in und liest nur die aktuell geöffnete Nachricht.</p>
     </section>
   </main>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
