@@ -6,7 +6,7 @@
   try{callbackUrl=new URL(callback);}catch(_){document.querySelector('p').textContent='Ungültige Weiterleitungsadresse.';return;}
   const channel=callbackUrl.searchParams.get('channel');
   const handoffKey=callbackUrl.searchParams.get('key');
-  const allowed=callbackUrl.origin===location.origin&&callbackUrl.pathname==='/auth-callback-v2.html';
+  const allowed=callbackUrl.origin===location.origin&&callbackUrl.pathname==='/auth-callback-v3.html';
   if(!allowed||!/^[A-Za-z0-9_-]{40,64}$/.test(channel||'')||!/^[A-Za-z0-9_-]{40,64}$/.test(handoffKey||'')){document.querySelector('p').textContent='Ungültige Weiterleitungsadresse.';return;}
   const supabase='https://rkhptbohniykwxhwhjiz.supabase.co';
   const authorize=()=>location.replace(`${supabase}/auth/v1/authorize?provider=azure&redirect_to=${encodeURIComponent(callback)}&scopes=${encodeURIComponent('email openid profile')}`);
