@@ -113,7 +113,8 @@ function beginMicrosoftSignIn(){
   button.disabled=true;status.textContent='Microsoft-Anmeldung wird geöffnet …';status.className='message';
   localStorage.removeItem(OAUTH_BRIDGE_KEY);
   const channel=randomToken();const handoffKey=randomToken();
-  const startUrl=`${location.origin}/auth-start.html?callback=${encodeURIComponent(CALLBACK_URL)}&channel=${encodeURIComponent(channel)}&key=${encodeURIComponent(handoffKey)}`;
+  const callback=`${CALLBACK_URL}?channel=${encodeURIComponent(channel)}&key=${encodeURIComponent(handoffKey)}`;
+  const startUrl=`${location.origin}/auth-start.html?callback=${encodeURIComponent(callback)}`;
   Office.context.ui.displayDialogAsync(startUrl,{height:70,width:40,displayInIframe:false},result=>{
     if(result.status!==Office.AsyncResultStatus.Succeeded){
       button.disabled=false;status.textContent=`Anmeldefenster konnte nicht geöffnet werden: ${result.error.message}`;status.className='message error';return;
