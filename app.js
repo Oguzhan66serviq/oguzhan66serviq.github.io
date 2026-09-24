@@ -55,7 +55,7 @@ async function ai(operation,payload){
 
 async function loadAccount(){
   state.user=await api('/auth/v1/user');
-  const rows=await api(`/rest/v1/organization_members?user_id=eq.${encodeURIComponent(state.user.id)}&status=eq.active&select=organization_id,display_name,role,organizations(name)&limit=1`);
+  const rows=await api(`/rest/v1/organization_members?user_id=eq.${encodeURIComponent(state.user.id)}&select=organization_id,display_name,role,organizations(name)&limit=1`);
   if(!rows.length) throw new Error('Für dieses Microsoft-Konto gibt es noch keinen Serviq-Arbeitsbereich. Lade die Uni-Adresse zuerst in Serviq unter „Team“ ein.');
   state.membership=rows[0];
   const org=encodeURIComponent(state.membership.organization_id);
