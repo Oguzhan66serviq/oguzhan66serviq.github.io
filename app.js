@@ -1,6 +1,7 @@
 const SUPABASE_URL = 'https://rkhptbohniykwxhwhjiz.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_I3Pz0TnaVqRt6GdszYq_Jw_BETkoJAk';
 const AI_URL = `${SUPABASE_URL}/functions/v1/serviq-ai`;
+const PDF_ATTACHMENT_URL = `${SUPABASE_URL}/functions/v1/outlook-pdf-attachment`;
 const SERVIQ_URL = 'https://serviq-catering-ai-ogu.oguzhan-yoeruerer.chatgpt.site';
 const CALLBACK_URL = `${location.origin}/auth-callback-v3.html`;
 const HANDOFF_URL = `${SUPABASE_URL}/functions/v1/outlook-auth-handoff`;
@@ -224,11 +225,17 @@ function replyHtml(quote){
   const rows=quote.lines.map(item=>`<tr><td style="padding:6px;border-bottom:1px solid #ddd">${html(item.name)}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd">${html(item.quantity)} ${html(item.unit)}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd">${html(euro(item.total))}</td></tr>`).join('');
   return `<p>Guten Tag ${html(name)},</p><p>${html(quote.introduction)}</p><table style="border-collapse:collapse;width:100%"><tbody>${rows}<tr><td colspan="2" style="padding:8px;text-align:right"><b>Gesamt inkl. MwSt.</b></td><td style="padding:8px;text-align:right"><b>${html(euro(quote.gross))}</b></td></tr></tbody></table><p>Das vollständige Angebot finden Sie als PDF im Anhang.</p><p>${html(quote.closing)}</p><p>Freundliche Grüße<br><b>${html(state.company.name||state.membership.organizations?.name||'Ihr Catering-Team')}</b></p>`;
 }
-function openReply(quote,pdfBase64){
+async function preparePdfAttachment(quote,pdfBase64){
+  const response=await fetch(PDF_ATTACHMENT_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${state.token}`,'Content-Type':'application/json'},body:JSON.stringify({base64:pdfBase64,filename:`Angebot-${quote.number}.pdf`})});
+  const result=await response.json().catch(()=>({}));
+  if(!response.ok||!result.url)throw new Error(result.error||'Die Angebots-PDF konnte nicht für Outlook bereitgestellt werden.');
+  return result.url;
+}
+function openReply(quote,pdfUrl){
   return new Promise((resolve,reject)=>{
-    if(!Office.context.requirements.isSetSupported('Mailbox','1.15')) return reject(new Error('Diese Outlook-Version unterstützt PDF-Anhänge im Antwortentwurf noch nicht. Bitte Outlook im Web oder die aktuelle Desktop-Version verwenden.'));
-    if(typeof pdfBase64!=='string'||!pdfBase64.length||pdfBase64.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(pdfBase64)) return reject(new Error('Die Angebots-PDF konnte nicht korrekt erzeugt werden.'));
-    const attachment={base64file:pdfBase64,name:`Angebot-${quote.number}.pdf`,type:'base64',inLine:false};
+    if(!Office.context.requirements.isSetSupported('Mailbox','1.9')) return reject(new Error('Diese Outlook-Version unterstützt das Öffnen des Antwortentwurfs noch nicht. Bitte Outlook im Web oder die aktuelle Desktop-Version verwenden.'));
+    if(typeof pdfUrl!=='string'||!pdfUrl.startsWith('https://')) return reject(new Error('Die Download-Adresse der Angebots-PDF ist ungültig.'));
+    const attachment={url:pdfUrl,name:`Angebot-${quote.number}.pdf`,type:'file',inLine:false};
     try{
       Office.context.mailbox.item.displayReplyFormAsync({htmlBody:replyHtml(quote),attachments:[attachment]},result=>{
         if(result.status===Office.AsyncResultStatus.Succeeded)resolve(); else reject(new Error(result.error?.message||'Der Outlook-Antwortentwurf konnte nicht geöffnet werden.'));
@@ -258,7 +265,8 @@ async function createOfferReply(){
     const quote={number,request:{...request,guestCount},lines,net,tax,gross:net+tax,vatRate,introduction:proposal.introduction||'vielen Dank für Ihre Anfrage. Gern unterbreiten wir Ihnen folgendes Angebot.',closing:proposal.closing||'Für Rückfragen und Anpassungswünsche stehen wir Ihnen gerne zur Verfügung.'};
     $('importBtn').textContent='PDF und Antwort werden erstellt …';
     await saveQuote(request,proposal,lines,{net,tax,gross:net+tax},number);
-    await openReply(quote,makePdf(quote));
+    const pdfUrl=await preparePdfAttachment(quote,makePdf(quote));
+    await openReply(quote,pdfUrl);
     message('Antwortentwurf mit Angebots-PDF geöffnet. Bitte vor dem Versand fachlich prüfen.','ok');
   }catch(error){message(friendlyError(error),'error');}
   finally{$('importBtn').disabled=false;$('importBtn').textContent='Angebot erstellen';}
