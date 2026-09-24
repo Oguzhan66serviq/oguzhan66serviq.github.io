@@ -227,9 +227,13 @@ function replyHtml(quote){
 function openReply(quote,pdfBase64){
   return new Promise((resolve,reject)=>{
     if(!Office.context.requirements.isSetSupported('Mailbox','1.15')) return reject(new Error('Diese Outlook-Version unterstützt PDF-Anhänge im Antwortentwurf noch nicht. Bitte Outlook im Web oder die aktuelle Desktop-Version verwenden.'));
-    Office.context.mailbox.item.displayReplyFormAsync({htmlBody:replyHtml(quote),attachments:[{base64file:pdfBase64,name:`Angebot-${quote.number}.pdf`,type:Office.MailboxEnums.AttachmentType.Base64,inLine:false}]},result=>{
-      if(result.status===Office.AsyncResultStatus.Succeeded)resolve(); else reject(new Error(result.error?.message||'Der Outlook-Antwortentwurf konnte nicht geöffnet werden.'));
-    });
+    if(typeof pdfBase64!=='string'||!pdfBase64.length||pdfBase64.length%4!==0||!/^[A-Za-z0-9+/]+={0,2}$/.test(pdfBase64)) return reject(new Error('Die Angebots-PDF konnte nicht korrekt erzeugt werden.'));
+    const attachment={base64file:pdfBase64,name:`Angebot-${quote.number}.pdf`,type:'base64',inLine:false};
+    try{
+      Office.context.mailbox.item.displayReplyFormAsync({htmlBody:replyHtml(quote),attachments:[attachment]},result=>{
+        if(result.status===Office.AsyncResultStatus.Succeeded)resolve(); else reject(new Error(result.error?.message||'Der Outlook-Antwortentwurf konnte nicht geöffnet werden.'));
+      });
+    }catch(error){reject(new Error(`Outlook konnte den Antwortentwurf nicht öffnen: ${error?.message||'unbekannter Fehler'}`));}
   });
 }
 
