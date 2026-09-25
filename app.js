@@ -9,10 +9,24 @@ const TOKEN_KEY = 'serviq_access_token';
 const REFRESH_KEY = 'serviq_refresh_token';
 const OAUTH_BRIDGE_KEY = 'serviq_oauth_bridge_v2';
 const OAUTH_CHANNEL = 'serviq_oauth_channel_v2';
-const state = { token: localStorage.getItem(TOKEN_KEY) || '', refreshToken: localStorage.getItem(REFRESH_KEY) || '', user: null, membership: null, mail: null, company: {}, rules: {}, catalog: [] };
+const state = { token: localStorage.getItem(TOKEN_KEY) || '', refreshToken: localStorage.getItem(REFRESH_KEY) || '', user: null, membership: null, mail: null, company: {}, rules: {}, catalog: [], pendingQuote: null };
 const $ = id => document.getElementById(id);
 const euro = value => new Intl.NumberFormat('de-DE',{style:'currency',currency:'EUR'}).format(value);
 const html = value => String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+const DEFAULT_TEMPLATE={
+  title:'Freibleibendes Angebot',
+  introduction:'Guten Tag {{ansprechpartner}},\n\nvielen Dank für Ihre Anfrage. Für {{veranstaltung}} am {{datum}} haben wir ein Cateringkonzept für {{gaeste}} Gäste zusammengestellt.',
+  closing:'Für Rückfragen und Anpassungswünsche stehen wir Ihnen gerne zur Verfügung.',
+  disclaimer:'Dieses Angebot ist freibleibend und unverbindlich. Es steht unter dem Vorbehalt der Verfügbarkeit sowie der abschließenden Prüfung und Bestätigung durch den Anbieter. Änderungen der Gästezahl oder des Leistungsumfangs können zu Preisanpassungen führen.',
+  emailGreeting:'Guten Tag {{ansprechpartner}},',
+  emailBody:'vielen Dank für Ihre Anfrage. Im Anhang finden Sie unser freibleibendes Angebot {{angebotsnummer}}. Bitte prüfen Sie die enthaltenen Leistungen und Konditionen.',
+  emailClosing:'Freundliche Grüße\n{{unternehmen}}'
+};
+const dateDE=value=>{if(!value)return'nach Vereinbarung';const date=new Date(`${value}T12:00:00`);return Number.isNaN(date.getTime())?String(value):new Intl.DateTimeFormat('de-DE').format(date);};
+function templateContext(request,number){return{ansprechpartner:request.contactName||state.mail?.fromName||'Damen und Herren',veranstaltung:request.eventName||state.mail?.subject||'Ihre Veranstaltung',datum:dateDE(request.eventDate),gaeste:Number(request.guestCount)||'',angebotsnummer:number||'',unternehmen:state.company.name||state.membership?.organizations?.name||'Ihr Catering-Team'};}
+function renderTemplate(value,context){return String(value||'').replace(/{{\s*(ansprechpartner|veranstaltung|datum|gaeste|angebotsnummer|unternehmen)\s*}}/gi,(_,key)=>String(context[key.toLowerCase()]??''));}
+function template(){return{...DEFAULT_TEMPLATE,...(state.company.offerTemplate||{})};}
+const paragraphs=value=>String(value||'').split(/\n{2,}/).map(part=>`<p>${html(part).replace(/\n/g,'<br>')}</p>`).join('');
 const fromBase64Url=value=>Uint8Array.from(atob(value.replace(/-/g,'+').replace(/_/g,'/').padEnd(Math.ceil(value.length/4)*4,'=')),c=>c.charCodeAt(0));
 const randomToken=(size=32)=>{const bytes=crypto.getRandomValues(new Uint8Array(size));return btoa(String.fromCharCode(...bytes)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');};
 async function decryptHandoff(ciphertext,iv,key){
@@ -21,7 +35,7 @@ async function decryptHandoff(ciphertext,iv,key){
   return JSON.parse(new TextDecoder().decode(clear));
 }
 
-function show(id){ ['signinView','importView','unsupportedView'].forEach(x => $(x).classList.toggle('hidden', x !== id)); }
+function show(id){ ['signinView','importView','reviewView','unsupportedView'].forEach(x => $(x).classList.toggle('hidden', x !== id)); }
 function message(text,type=''){ $('message').textContent=text; $('message').className=`message ${type}`; }
 function friendlyError(error){
   const raw=String(error?.message||error);
@@ -45,7 +59,8 @@ async function api(path,options={},retried=false){
   if(response.status===401&&!retried&&state.refreshToken){await refreshSession();return api(path,options,true);}
   if(!response.ok) throw new Error(await response.text()||`HTTP ${response.status}`);
   if(response.status===204) return null;
-  return response.json();
+  const body=await response.text();
+  return body?JSON.parse(body):null;
 }
 async function ai(operation,payload){
   const response=await fetch(AI_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${state.token}`,'Content-Type':'application/json'},body:JSON.stringify({operation,...payload,consent_to_openai:true})});
@@ -180,53 +195,12 @@ function calculateLines(proposal,guestCount){
   }).filter(item=>item.quantity>0);
 }
 
-function pdfSafe(value){
-  return String(value??'').replace(/[äÄ]/g,'ae').replace(/[öÖ]/g,'oe').replace(/[üÜ]/g,'ue').replace(/ß/g,'ss').replace(/[^ -~]/g,'').replace(/([\\()])/g,'\\$1');
-}
-function wrap(text,max=82){
-  const words=pdfSafe(text).split(/\s+/); const lines=[]; let line='';
-  words.forEach(word=>{const next=line?`${line} ${word}`:word;if(next.length>max&&line){lines.push(line);line=word;}else line=next;});
-  if(line)lines.push(line); return lines;
-}
-function makePdf(quote){
-  const lines=[]; const add=(text,size=10,bold=false,gap=15)=>lines.push({text,size,bold,gap});
-  add(state.company.name||state.membership.organizations?.name||'Catering-Unternehmen',20,true,28);
-  add(`Angebot ${quote.number}`,16,true,24);
-  add(`Kunde: ${quote.request.customerCompany||quote.request.contactName||state.mail.fromName||state.mail.from}`);
-  add(`Veranstaltung: ${quote.request.eventName||state.mail.subject}`);
-  add(`Termin: ${quote.request.eventDate||'nach Abstimmung'} · Gaeste: ${quote.request.guestCount||'offen'}`,10,false,22);
-  wrap(quote.introduction).forEach(t=>add(t,10,false,13)); add('',10,false,8);
-  add('Leistungen',12,true,20);
-  quote.lines.forEach(item=>{add(`${item.name} — ${item.quantity} ${item.unit} x ${euro(item.price)} = ${euro(item.total)}`,9,false,13);});
-  add('',10,false,8); add(`Netto: ${euro(quote.net)}`,11,true,16); add(`MwSt. ${quote.vatRate}%: ${euro(quote.tax)}`); add(`Gesamt: ${euro(quote.gross)}`,13,true,22);
-  wrap(quote.closing).forEach(t=>add(t,10,false,13));
-  if(state.company.paymentTerms)add(`Zahlungsbedingungen: ${state.company.paymentTerms}`,9,false,13);
-  const commands=[]; let y=790;
-  for(const row of lines){ if(y<55)break; commands.push(`BT /F${row.bold?2:1} ${row.size} Tf 50 ${y} Td (${pdfSafe(row.text)}) Tj ET`); y-=row.gap; }
-  const stream=commands.join('\n');
-  const objects=[
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>',
-    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'
-  ];
-  let pdf='%PDF-1.4\n'; const offsets=[0];
-  objects.forEach((object,index)=>{offsets[index+1]=pdf.length;pdf+=`${index+1} 0 obj\n${object}\nendobj\n`;});
-  const xref=pdf.length; pdf+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n`;
-  for(let i=1;i<=objects.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
-  pdf+=`trailer << /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return btoa(pdf);
-}
-
 function replyHtml(quote){
-  const name=quote.request.contactName||state.mail.fromName||'Damen und Herren';
   const rows=quote.lines.map(item=>`<tr><td style="padding:6px;border-bottom:1px solid #ddd">${html(item.name)}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd">${html(item.quantity)} ${html(item.unit)}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd">${html(euro(item.total))}</td></tr>`).join('');
-  return `<p>Guten Tag ${html(name)},</p><p>${html(quote.introduction)}</p><table style="border-collapse:collapse;width:100%"><tbody>${rows}<tr><td colspan="2" style="padding:8px;text-align:right"><b>Gesamt inkl. MwSt.</b></td><td style="padding:8px;text-align:right"><b>${html(euro(quote.gross))}</b></td></tr></tbody></table><p>Das vollständige Angebot finden Sie als PDF im Anhang.</p><p>${html(quote.closing)}</p><p>Freundliche Grüße<br><b>${html(state.company.name||state.membership.organizations?.name||'Ihr Catering-Team')}</b></p>`;
+  return `${paragraphs(quote.emailGreeting)}${paragraphs(quote.emailBody)}<table style="border-collapse:collapse;width:100%"><tbody>${rows}<tr><td colspan="2" style="padding:8px;text-align:right"><b>Gesamt inkl. MwSt.</b></td><td style="padding:8px;text-align:right"><b>${html(euro(quote.gross))}</b></td></tr></tbody></table>${paragraphs(quote.emailClosing)}<p><small>${html(quote.disclaimer)}</small></p>`;
 }
-async function preparePdfAttachment(quote,pdfBase64){
-  const response=await fetch(PDF_ATTACHMENT_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${state.token}`,'Content-Type':'application/json'},body:JSON.stringify({base64:pdfBase64,filename:`Angebot-${quote.number}.pdf`})});
+async function preparePdfAttachment(quote){
+  const response=await fetch(PDF_ATTACHMENT_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${state.token}`,'Content-Type':'application/json'},body:JSON.stringify({quote,company:state.company,organizationName:state.membership.organizations?.name||'',filename:`Angebot-${quote.number}.pdf`})});
   const result=await response.json().catch(()=>({}));
   if(!response.ok||!result.url)throw new Error(result.error||'Die Angebots-PDF konnte nicht für Outlook bereitgestellt werden.');
   return result.url;
@@ -248,27 +222,66 @@ async function saveQuote(requestData,proposal,lines,totals,number){
   const requestPayload={organization_id:state.membership.organization_id,source_type:'outlook',source_name:state.mail.subject,raw_text:state.mail.body,customer_company:requestData.customerCompany||'',contact_name:requestData.contactName||state.mail.fromName,contact_email:requestData.contactEmail||state.mail.from,event_name:requestData.eventName||state.mail.subject,event_date:requestData.eventDate||null,event_time:requestData.eventTime||'',venue:requestData.venue||'',guest_count:Number(requestData.guestCount)||1,preferences:requestData.dietary||'',notes:$('note').value.trim()||requestData.notes||'',extracted_data:{...requestData,message_id:state.mail.messageId},missing_fields:requestData.missing_fields||[],confidence:{uncertain_fields:requestData.uncertain_fields||[]},status:'quoted',created_by:state.user.id};
   const requests=await api('/rest/v1/customer_requests',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify(requestPayload)});
   const offers=await api('/rest/v1/offers',{method:'POST',headers:{Prefer:'return=representation'},body:JSON.stringify({organization_id:state.membership.organization_id,request_id:requests[0].id,offer_number:number,status:'needs_review',net_total:totals.net,tax_total:totals.tax,gross_total:totals.gross,created_by:state.user.id})});
-  await api('/rest/v1/offer_versions',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({organization_id:state.membership.organization_id,offer_id:offers[0].id,version_no:1,snapshot:{request:requestData,items:lines,source:{type:'outlook',message_id:state.mail.messageId},warnings:proposal.warnings||[]},offer_text:`${proposal.introduction}\n\n${proposal.closing}`,change_note:'Automatisch aus Outlook erstellt – Mitarbeiterprüfung erforderlich',net_total:totals.net,tax_total:totals.tax,gross_total:totals.gross,created_by:state.user.id})});
+  await api('/rest/v1/offer_versions',{method:'POST',headers:{Prefer:'return=minimal'},body:JSON.stringify({organization_id:state.membership.organization_id,offer_id:offers[0].id,version_no:1,snapshot:{request:requestData,items:lines,adjustment:state.pendingQuote?.adjustment||null,source:{type:'outlook',message_id:state.mail.messageId},warnings:proposal.warnings||[]},offer_text:`${proposal.introduction}\n\n${proposal.closing}`,change_note:'In Outlook erstellt und vor der PDF-Erstellung manuell geprüft',net_total:totals.net,tax_total:totals.tax,gross_total:totals.gross,created_by:state.user.id})});
+}
+
+function recalculatePendingQuote(){
+  const quote=state.pendingQuote;if(!quote)return;
+  quote.lines.forEach(line=>{line.quantity=Math.max(0,Number(line.quantity)||0);line.price=Math.max(0,Number(line.price)||0);line.total=line.quantity*line.price;});
+  const base=quote.lines.reduce((sum,line)=>sum+line.total,0);
+  const kind=$('reviewAdjustmentType').value;const value=Math.max(0,Number($('reviewAdjustmentValue').value)||0);
+  const adjustment=kind==='discount'?-Math.min(base,base*value/100):kind==='surcharge'?base*value/100:0;
+  quote.adjustment={type:kind,value,amount:adjustment};quote.net=Math.max(0,base+adjustment);quote.tax=quote.net*quote.vatRate/100;quote.gross=quote.net+quote.tax;
+  $('reviewGross').textContent=euro(quote.gross);
+}
+
+function renderQuoteReview(){
+  const quote=state.pendingQuote;if(!quote)return;
+  $('reviewLines').innerHTML=quote.lines.map((line,index)=>`<div class="review-line" data-index="${index}"><input data-field="name" value="${html(line.name)}" aria-label="Bezeichnung"/><div><input data-field="quantity" type="number" min="0" step="0.1" value="${line.quantity}" aria-label="Menge"/><input data-field="price" type="number" min="0" step="0.01" value="${line.price}" aria-label="Preis netto"/><button data-remove type="button" aria-label="Position entfernen">×</button></div></div>`).join('');
+  document.querySelectorAll('.review-line').forEach(row=>{
+    const index=Number(row.dataset.index);row.querySelectorAll('[data-field]').forEach(input=>input.addEventListener('input',()=>{state.pendingQuote.lines[index][input.dataset.field]=input.dataset.field==='name'?input.value:Number(input.value);recalculatePendingQuote();}));
+    row.querySelector('[data-remove]').addEventListener('click',()=>{state.pendingQuote.lines.splice(index,1);renderQuoteReview();});
+  });
+  recalculatePendingQuote();show('reviewView');
+}
+
+function addReviewLine(event){
+  event.preventDefault();if(!state.pendingQuote)return;
+  const name=$('reviewAddName').value.trim();const quantity=Math.max(0,Number($('reviewAddQty').value)||0);const price=Math.max(0,Number($('reviewAddPrice').value)||0);
+  if(!name)return;
+  state.pendingQuote.lines.push({id:`manual-${Date.now()}`,name,detail:'Manuell ergänzt',unit:'pauschal',quantity,price,total:quantity*price,rationale:'Manuell ergänzt'});
+  event.currentTarget.reset();$('reviewAddQty').value='1';renderQuoteReview();
+}
+
+async function finalizeOffer(){
+  const quote=state.pendingQuote;if(!quote||!quote.lines.length){$('reviewMessage').textContent='Bitte mindestens eine Position ergänzen.';$('reviewMessage').className='message error';return;}
+  recalculatePendingQuote();$('finalizeOfferBtn').disabled=true;$('finalizeOfferBtn').textContent='PDF und Antwort werden erstellt …';
+  try{
+    await saveQuote(quote.request,quote.proposal,quote.lines,{net:quote.net,tax:quote.tax,gross:quote.gross},quote.number);
+    const pdfUrl=await preparePdfAttachment(quote);await openReply(quote,pdfUrl);
+    $('reviewMessage').textContent='Antwortentwurf mit Angebots-PDF geöffnet. Bitte vor dem Versand prüfen.';$('reviewMessage').className='message ok';
+  }catch(error){$('reviewMessage').textContent=friendlyError(error);$('reviewMessage').className='message error';}
+  finally{$('finalizeOfferBtn').disabled=false;$('finalizeOfferBtn').textContent='Antwort mit PDF öffnen';}
 }
 
 async function createOfferReply(){
   $('importBtn').disabled=true; $('importBtn').textContent='E-Mail wird analysiert …'; message('Serviq liest die Anfrage aus und kalkuliert mit dem Leistungskatalog …');
+  let stage='Analyse der E-Mail';
   try{
     const request=await ai('analyze_email',{text:state.mail.body});
     const guestCount=Math.max(1,Number(request.guestCount)||1);
     $('importBtn').textContent='Angebot wird kalkuliert …';
+    stage='Kalkulation des Angebots';
     const proposal=await ai('generate_quote',{request,items:state.catalog.map(item=>({id:item.external_id,name:item.name,detail:item.detail,category:item.category,unit:item.unit,defaultQty:item.default_qty,price:item.price,defaultSelected:item.default_selected})),company:state.company,rules:state.rules});
     const lines=calculateLines(proposal,guestCount);
     if(!lines.length)throw new Error('Die KI konnte keine passende Leistung sicher auswählen. Bitte den Leistungskatalog in Serviq prüfen.');
     const net=lines.reduce((sum,item)=>sum+item.total,0); const vatRate=Number(state.company.vatRate??19); const tax=net*vatRate/100;
     const number=`AN-${new Date().toISOString().slice(0,10).replaceAll('-','')}-${String(Date.now()).slice(-5)}`;
-    const quote={number,request:{...request,guestCount},lines,net,tax,gross:net+tax,vatRate,introduction:proposal.introduction||'vielen Dank für Ihre Anfrage. Gern unterbreiten wir Ihnen folgendes Angebot.',closing:proposal.closing||'Für Rückfragen und Anpassungswünsche stehen wir Ihnen gerne zur Verfügung.'};
-    $('importBtn').textContent='PDF und Antwort werden erstellt …';
-    await saveQuote(request,proposal,lines,{net,tax,gross:net+tax},number);
-    const pdfUrl=await preparePdfAttachment(quote,makePdf(quote));
-    await openReply(quote,pdfUrl);
-    message('Antwortentwurf mit Angebots-PDF geöffnet. Bitte vor dem Versand fachlich prüfen.','ok');
-  }catch(error){message(friendlyError(error),'error');}
+    const context=templateContext({...request,guestCount},number);const textTemplate=template();
+    const quote={number,request:{...request,guestCount},lines,net,tax,gross:net+tax,vatRate,title:renderTemplate(textTemplate.title,context),introduction:renderTemplate(textTemplate.introduction,context)||proposal.introduction,closing:renderTemplate(textTemplate.closing,context)||proposal.closing,disclaimer:renderTemplate(textTemplate.disclaimer,context),emailGreeting:renderTemplate(textTemplate.emailGreeting,context),emailBody:renderTemplate(textTemplate.emailBody,context),emailClosing:renderTemplate(textTemplate.emailClosing,context)};
+    proposal.introduction=quote.introduction;proposal.closing=quote.closing;quote.proposal=proposal;
+    state.pendingQuote=quote;renderQuoteReview();
+  }catch(error){message(`${stage}: ${friendlyError(error)}`,'error');}
   finally{$('importBtn').disabled=false;$('importBtn').textContent='Angebot erstellen';}
 }
 
@@ -277,5 +290,10 @@ $('microsoftSignInBtn').addEventListener('click',beginMicrosoftSignIn);
 $('forgotPasswordBtn').addEventListener('click',()=>Office.context.ui.openBrowserWindow(`${SERVIQ_URL}/?auth=recover`));
 $('signOutBtn').addEventListener('click',()=>{clearSession();show('signinView');});
 $('importBtn').addEventListener('click',createOfferReply);
+$('reviewAddForm').addEventListener('submit',addReviewLine);
+$('reviewAdjustmentType').addEventListener('change',recalculatePendingQuote);
+$('reviewAdjustmentValue').addEventListener('input',recalculatePendingQuote);
+$('finalizeOfferBtn').addEventListener('click',finalizeOffer);
+$('cancelReviewBtn').addEventListener('click',()=>show('importView'));
 $('openServiqBtn').addEventListener('click',()=>Office.context.ui.openBrowserWindow(SERVIQ_URL));
 Office.onReady(info=>{if(info.host===Office.HostType.Outlook)initialize();else show('unsupportedView');});
