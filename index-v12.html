@@ -44,7 +44,24 @@
       <p class="fine">Serviq erstellt einen bearbeitbaren Antwortentwurf mit Angebots-PDF. Vor dem Versand bitte kurz prüfen.</p>
       <button id="openServiqBtn" class="link">Einstellungen öffnen</button>
       <p id="message" class="message" role="status" aria-live="polite"></p>
-      <p class="fine">Serviq Outlook Version 17</p>
+      <p class="fine">Serviq Outlook Version 19</p>
+    </section>
+
+    <section id="reviewView" class="card hidden">
+      <p class="eyebrow">Angebot prüfen</p>
+      <h1>Entwurf nachbearbeiten</h1>
+      <p class="fine review-hint">Ändere Positionen vor der PDF-Erstellung. Diese Anpassungen gelten nur für dieses Angebot.</p>
+      <div id="reviewLines" class="review-lines"></div>
+      <form id="reviewAddForm" class="review-add">
+        <input id="reviewAddName" required maxlength="100" placeholder="Neue Position" />
+        <div><input id="reviewAddQty" type="number" min="0" step="0.1" value="1" required aria-label="Menge" /><input id="reviewAddPrice" type="number" min="0" step="0.01" required placeholder="Preis €" aria-label="Preis netto" /></div>
+        <button class="secondary" type="submit">+ Position ergänzen</button>
+      </form>
+      <div class="review-adjustment"><select id="reviewAdjustmentType" aria-label="Preisanpassung"><option value="none">Keine Preisanpassung</option><option value="discount">Rabatt in %</option><option value="surcharge">Aufschlag in %</option></select><input id="reviewAdjustmentValue" type="number" min="0" step="0.01" value="0" aria-label="Wert der Preisanpassung" /></div>
+      <div class="review-total"><span>Gesamt inkl. MwSt.</span><strong id="reviewGross">0,00 €</strong></div>
+      <button id="finalizeOfferBtn" class="primary" type="button">Antwort mit PDF öffnen</button>
+      <button id="cancelReviewBtn" class="link review-cancel" type="button">Zurück zur Anfrage</button>
+      <p id="reviewMessage" class="message" role="status" aria-live="polite"></p>
     </section>
 
     <section id="unsupportedView" class="card hidden">
@@ -52,6 +69,6 @@
       <p>Diese Oberfläche gehört zum Serviq-Outlook-Add-in und liest nur die aktuell geöffnete Nachricht.</p>
     </section>
   </main>
-  <script src="app-v15.js?v=17"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>
