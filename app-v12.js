@@ -180,53 +180,13 @@ function calculateLines(proposal,guestCount){
   }).filter(item=>item.quantity>0);
 }
 
-function pdfSafe(value){
-  return String(value??'').replace(/[äÄ]/g,'ae').replace(/[öÖ]/g,'oe').replace(/[üÜ]/g,'ue').replace(/ß/g,'ss').replace(/[^ -~]/g,'').replace(/([\\()])/g,'\\$1');
-}
-function wrap(text,max=82){
-  const words=pdfSafe(text).split(/\s+/); const lines=[]; let line='';
-  words.forEach(word=>{const next=line?`${line} ${word}`:word;if(next.length>max&&line){lines.push(line);line=word;}else line=next;});
-  if(line)lines.push(line); return lines;
-}
-function makePdf(quote){
-  const lines=[]; const add=(text,size=10,bold=false,gap=15)=>lines.push({text,size,bold,gap});
-  add(state.company.name||state.membership.organizations?.name||'Catering-Unternehmen',20,true,28);
-  add(`Angebot ${quote.number}`,16,true,24);
-  add(`Kunde: ${quote.request.customerCompany||quote.request.contactName||state.mail.fromName||state.mail.from}`);
-  add(`Veranstaltung: ${quote.request.eventName||state.mail.subject}`);
-  add(`Termin: ${quote.request.eventDate||'nach Abstimmung'} · Gaeste: ${quote.request.guestCount||'offen'}`,10,false,22);
-  wrap(quote.introduction).forEach(t=>add(t,10,false,13)); add('',10,false,8);
-  add('Leistungen',12,true,20);
-  quote.lines.forEach(item=>{add(`${item.name} — ${item.quantity} ${item.unit} x ${euro(item.price)} = ${euro(item.total)}`,9,false,13);});
-  add('',10,false,8); add(`Netto: ${euro(quote.net)}`,11,true,16); add(`MwSt. ${quote.vatRate}%: ${euro(quote.tax)}`); add(`Gesamt: ${euro(quote.gross)}`,13,true,22);
-  wrap(quote.closing).forEach(t=>add(t,10,false,13));
-  if(state.company.paymentTerms)add(`Zahlungsbedingungen: ${state.company.paymentTerms}`,9,false,13);
-  const commands=[]; let y=790;
-  for(const row of lines){ if(y<55)break; commands.push(`BT /F${row.bold?2:1} ${row.size} Tf 50 ${y} Td (${pdfSafe(row.text)}) Tj ET`); y-=row.gap; }
-  const stream=commands.join('\n');
-  const objects=[
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 5 0 R /F2 6 0 R >> >> /Contents 4 0 R >>',
-    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>'
-  ];
-  let pdf='%PDF-1.4\n'; const offsets=[0];
-  objects.forEach((object,index)=>{offsets[index+1]=pdf.length;pdf+=`${index+1} 0 obj\n${object}\nendobj\n`;});
-  const xref=pdf.length; pdf+=`xref\n0 ${objects.length+1}\n0000000000 65535 f \n`;
-  for(let i=1;i<=objects.length;i++)pdf+=String(offsets[i]).padStart(10,'0')+' 00000 n \n';
-  pdf+=`trailer << /Size ${objects.length+1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return btoa(pdf);
-}
-
 function replyHtml(quote){
   const name=quote.request.contactName||state.mail.fromName||'Damen und Herren';
   const rows=quote.lines.map(item=>`<tr><td style="padding:6px;border-bottom:1px solid #ddd">${html(item.name)}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd">${html(item.quantity)} ${html(item.unit)}</td><td style="padding:6px;text-align:right;border-bottom:1px solid #ddd">${html(euro(item.total))}</td></tr>`).join('');
   return `<p>Guten Tag ${html(name)},</p><p>${html(quote.introduction)}</p><table style="border-collapse:collapse;width:100%"><tbody>${rows}<tr><td colspan="2" style="padding:8px;text-align:right"><b>Gesamt inkl. MwSt.</b></td><td style="padding:8px;text-align:right"><b>${html(euro(quote.gross))}</b></td></tr></tbody></table><p>Das vollständige Angebot finden Sie als PDF im Anhang.</p><p>${html(quote.closing)}</p><p>Freundliche Grüße<br><b>${html(state.company.name||state.membership.organizations?.name||'Ihr Catering-Team')}</b></p>`;
 }
-async function preparePdfAttachment(quote,pdfBase64){
-  const response=await fetch(PDF_ATTACHMENT_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${state.token}`,'Content-Type':'application/json'},body:JSON.stringify({base64:pdfBase64,filename:`Angebot-${quote.number}.pdf`})});
+async function preparePdfAttachment(quote){
+  const response=await fetch(PDF_ATTACHMENT_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${state.token}`,'Content-Type':'application/json'},body:JSON.stringify({quote,company:state.company,organizationName:state.membership.organizations?.name||'',filename:`Angebot-${quote.number}.pdf`})});
   const result=await response.json().catch(()=>({}));
   if(!response.ok||!result.url)throw new Error(result.error||'Die Angebots-PDF konnte nicht für Outlook bereitgestellt werden.');
   return result.url;
@@ -253,10 +213,12 @@ async function saveQuote(requestData,proposal,lines,totals,number){
 
 async function createOfferReply(){
   $('importBtn').disabled=true; $('importBtn').textContent='E-Mail wird analysiert …'; message('Serviq liest die Anfrage aus und kalkuliert mit dem Leistungskatalog …');
+  let stage='Analyse der E-Mail';
   try{
     const request=await ai('analyze_email',{text:state.mail.body});
     const guestCount=Math.max(1,Number(request.guestCount)||1);
     $('importBtn').textContent='Angebot wird kalkuliert …';
+    stage='Kalkulation des Angebots';
     const proposal=await ai('generate_quote',{request,items:state.catalog.map(item=>({id:item.external_id,name:item.name,detail:item.detail,category:item.category,unit:item.unit,defaultQty:item.default_qty,price:item.price,defaultSelected:item.default_selected})),company:state.company,rules:state.rules});
     const lines=calculateLines(proposal,guestCount);
     if(!lines.length)throw new Error('Die KI konnte keine passende Leistung sicher auswählen. Bitte den Leistungskatalog in Serviq prüfen.');
@@ -264,11 +226,14 @@ async function createOfferReply(){
     const number=`AN-${new Date().toISOString().slice(0,10).replaceAll('-','')}-${String(Date.now()).slice(-5)}`;
     const quote={number,request:{...request,guestCount},lines,net,tax,gross:net+tax,vatRate,introduction:proposal.introduction||'vielen Dank für Ihre Anfrage. Gern unterbreiten wir Ihnen folgendes Angebot.',closing:proposal.closing||'Für Rückfragen und Anpassungswünsche stehen wir Ihnen gerne zur Verfügung.'};
     $('importBtn').textContent='PDF und Antwort werden erstellt …';
+    stage='Speichern des Angebots';
     await saveQuote(request,proposal,lines,{net,tax,gross:net+tax},number);
-    const pdfUrl=await preparePdfAttachment(quote,makePdf(quote));
+    stage='Erstellen der Angebots-PDF';
+    const pdfUrl=await preparePdfAttachment(quote);
+    stage='Öffnen des Outlook-Antwortentwurfs';
     await openReply(quote,pdfUrl);
     message('Antwortentwurf mit Angebots-PDF geöffnet. Bitte vor dem Versand fachlich prüfen.','ok');
-  }catch(error){message(friendlyError(error),'error');}
+  }catch(error){message(`${stage}: ${friendlyError(error)}`,'error');}
   finally{$('importBtn').disabled=false;$('importBtn').textContent='Angebot erstellen';}
 }
 
