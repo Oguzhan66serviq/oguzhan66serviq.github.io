@@ -45,7 +45,8 @@ async function api(path,options={},retried=false){
   if(response.status===401&&!retried&&state.refreshToken){await refreshSession();return api(path,options,true);}
   if(!response.ok) throw new Error(await response.text()||`HTTP ${response.status}`);
   if(response.status===204) return null;
-  return response.json();
+  const body=await response.text();
+  return body?JSON.parse(body):null;
 }
 async function ai(operation,payload){
   const response=await fetch(AI_URL,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:`Bearer ${state.token}`,'Content-Type':'application/json'},body:JSON.stringify({operation,...payload,consent_to_openai:true})});
